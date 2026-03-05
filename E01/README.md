@@ -42,7 +42,8 @@ print(imgs.shape)
 - **`np.hstack((img, gray_bgr))`**: Numpy의 수평 결합 함수를 사용하여 두 이미지 행렬을 가로 방향으로 이어붙입니다.
 
 ### 결과 화면
-![01_결과화면](https://via.placeholder.com/600x300?text=01_Result_Sample)
+<img width="1795" height="631" alt="image" src="https://github.com/user-attachments/assets/d1fe5e5e-854f-4337-b662-4ecb155ab407" />
+
 
 ---
 
@@ -105,14 +106,15 @@ while True:
 - **`key = cv.waitKey(1)`**: 메인 루프에서 1ms 간격으로 키 입력을 확인하여 `+`, `-` 키에 따라 `draw_size` 변수를 동적으로 변경합니다.
 
 ### 결과 화면
-![02_결과화면](https://via.placeholder.com/600x400?text=02_Result_Sample)
+<img width="898" height="631" alt="image" src="https://github.com/user-attachments/assets/dc3f7848-b6c7-481e-b734-54d551e258e8" />
+
 
 ---
 
 ## 3. 스마트 이미지 크롭 도구 (`03.py`)
 
 ### 문제 설명
-사용자가 드래그하여 이미지의 특정 영역을 선택하고, 해당 영역을 고밀도로 추출(Crop)하는 기능을 구현합니다. 선택 영역의 시각적 피드백 유지, 리셋 기능, 그리고 파일 저장 기능을 포함한 종합적인 도구 제작을 목표로 합니다.
+사용자가 드래그하여 이미지의 특정 영역을 선택하고, 해당 영역을 추출(Crop)하는 기능을 구현합니다. 선택 영역의 시각적 피드백 유지, 리셋 기능, 그리고 파일 저장 기능을 포함한 종합적인 도구 제작을 목표로 합니다.
 
 ### 전체 코드
 ```python
@@ -196,4 +198,6 @@ cv.destroyAllWindows()
 - **범용 클릭 처리**: `LBUTTON`과 `RBUTTON` 이벤트를 동시에 체크하여 마우스 어느 쪽 버튼으로든 영역 선택이 가능하도록 편의성을 높였습니다.
 
 ### 결과 화면
-![03_결과화면](https://via.placeholder.com/600x400?text=03_Result_Sample)
+<img width="901" height="640" alt="image" src="https://github.com/user-attachments/assets/f6c4b2a3-90b3-4bf5-b3db-7d7e4a535092" />
+
+

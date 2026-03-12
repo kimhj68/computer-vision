@@ -1,0 +1,363 @@
+# Image Formation 및 기하학적 변환 프로젝트
+
+이 프로젝트는 카메라 캘리브레이션, 아핀 변환(회전, 이동, 크기 조절), 그리고 스테레오 시차 기반의 깊이(Depth) 추정을 다룹니다.
+
+---
+
+## 1. 체크보드 기반 카메라 캘리브레이션 (`01.Calibration.py`)
+
+### 문제 설명
+카메라 렌즈의 왜곡을 보정하고 실제 세계의 좌표와 이미지 좌표 사이의 관계를 파악하기 위해 내부 파라미터(K)와 왜곡 계수를 산출합니다. 여러 각도에서 촬영된 체크보드 이미지에서 코너를 검출하고 이를 기반으로 캘리브레이션을 수행합니다.
+
+### 전체 코드
+```python
+import cv2
+import numpy as np
+import glob
+
+# 체크보드 내부 코너 개수
+CHECKERBOARD = (9, 6)
+
+# 체크보드 한 칸 실제 크기 (mm)
+square_size = 25.0
+
+# 코너 정밀화 조건
+criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+
+# 실제 좌표 생성
+objp = np.zeros((CHECKERBOARD[0]*CHECKERBOARD[1], 3), np.float32)
+objp[:, :2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2)
+objp *= square_size
+
+# 저장할 좌표
+objpoints = []
+imgpoints = []
+
+images = glob.glob("../images/calibration_images/left*.jpg")
+
+img_size = None
+
+# -----------------------------
+for fname in images:
+    img = cv2.imread(fname)
+    if img is None:
+        continue
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if img_size is None:
+        img_size = gray.shape[::-1]
+
+    # 체크보드 코너 찾기
+    ret, corners = cv2.findChessboardCorners(gray, CHECKERBOARD, None)
+
+    # 코너를 찾았으면 좌표 저장
+    if ret == True:
+        objpoints.append(objp)
+
+        # 코너 정밀화
+        corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+        imgpoints.append(corners2)
+
+        # 코너 그리기 시각화 (선택 사항)
+        cv2.drawChessboardCorners(img, CHECKERBOARD, corners2, ret)
+        cv2.imshow('img', img)
+        cv2.waitKey(100)
+
+cv2.destroyAllWindows()
+# 2. 카메라 캘리브레이션
+# -----------------------------
+ret, K, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img_size, None, None)
+
+
+print("Camera Matrix K:")
+print(K)
+
+print("\nDistortion Coefficients:")
+print(dist)
+
+# -----------------------------
+# 3. 왜곡 보정 시각화
+# -----------------------------
+# 결과 확인을 위한 첫 번째 이미지 보정
+img = cv2.imread(images[0])
+h, w = img.shape[:2]
+new_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(K, dist, (w, h), 1, (w, h))
+
+# 왜곡 보정
+dst = cv2.undistort(img, K, dist, None, new_camera_matrix)
+
+# 시각화 (보정 전/후 비교)
+res = np.hstack((img, dst))
+cv2.imshow('Undistortion Result (Left: Original, Right: Undistorted)', res)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+
+# 결과 저장
+output_path = "../outputs/01_calibration_result.jpg"
+cv2.imwrite(output_path, res)
+print(f"Result saved to {output_path}")
+```
+
+### 핵심 코드 및 설명
+- **`cv2.findChessboardCorners`**: 이미지에서 체크보드의 격자 패턴 코너를 자동으로 찾습니다.
+- **`cv2.calibrateCamera`**: 검출된 2D 이미지 코너 좌표와 미리 정의된 3D 실제 좌표를 비교하여 카메라 행렬과 왜곡 계수를 계산합니다.
+- **`cv2.undistort`**: 계산된 파라미터를 사용하여 렌즈에 의해 휘어진 이미지를 평평하게 보정합니다.
+
+### 결과 화면
+![01_calibration_result](https://github.com/user-attachments/assets/bd27434a-aaee-4319-9cc2-3e22bc17b6da)
+
+---
+
+## 2. 이미지 Rotation & Transformation (`02.Transformation.py`)
+
+### 문제 설명
+하나의 이미지에 회전(Rotation), 크기 조절(Scaling), 평행 이동(Translation)을 동시에 적용하는 아핀 변환(Affine Transformation)을 학습합니다. 이미지 중앙을 기준으로 변환 행렬을 생성하고 이를 수정하여 이동 효과를 추가합니다.
+
+### 전체 코드
+```python
+import cv2
+import numpy as np
+from pathlib import Path
+
+# 출력 폴더 생성
+output_dir = Path("../outputs")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+# 이미지 불러오기
+img = cv2.imread("../images/rose.png")
+if img is None:
+    raise FileNotFoundError("이미지를 찾지 못했습니다.")
+
+rows, cols = img.shape[:2]
+
+# 1. 이미지의 중심 기준으로 +30도 회전 및 0.8배 크기 조절
+# cv2.getRotationMatrix2D(center, angle, scale)
+center = (cols / 2, rows / 2)
+angle = 30
+scale = 0.8
+M = cv2.getRotationMatrix2D(center, angle, scale)
+
+# 2. x축 방향으로 +80px, y축 방향으로 -40px만큼 평행이동
+# 아핀 행렬 M의 마지막 열이 [tx, ty]를 담당함
+M[0, 2] += 80
+M[1, 2] -= 40
+
+# 3. 변환 적용
+# cv2.warpAffine(src, M, dsize)
+dst = cv2.warpAffine(img, M, (cols, rows))
+
+# 결과 시각화
+cv2.imshow('Original', img)
+cv2.imshow('Rotated + Scaled + Translated', dst)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+
+# 결과 저장
+cv2.imwrite("../outputs/02_transformation_result.jpg", dst)
+print("Result saved to ../outputs/02_transformation_result.jpg")
+```
+
+### 핵심 코드 및 설명
+- **`cv2.getRotationMatrix2D`**: 회전 중심, 각도, 배율을 입력받아 2x3 아핀 변환 행렬을 생성합니다.
+- **`M[0, 2] += tx, M[1, 2] += ty`**: 생성된 행렬의 마지막 열은 이동(Translation)을 담당합니다. 여기에 값을 더해줌으로써 회전과 동시에 이동이 발생하게 합니다.
+- **`cv2.warpAffine`**: 계산된 2x3 변환 행렬을 실제 이미지 픽셀들에 적용하여 결과 영상을 생성합니다.
+
+### 결과 화면
+<table align="center">
+  <tr>
+    <td align="center"><b>Original</b></td>
+    <td align="center"><b>Rotated + Scaled + Translated</b></td>
+  </tr>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/9b40a2dd-ff82-435b-a426-3d2caa94b7db" width="100%"></td>
+    <td><img src="https://github.com/user-attachments/assets/68e69f9e-c39d-4ff9-b24e-4e0affcab07f" width="100%"></td>
+  </tr>
+</table>
+---
+
+## 3. Stereo Disparity 기반 Depth 추정 (`03.Depth.py`)
+
+### 문제 설명
+스테레오 카메라(좌/우) 시스템에서 발생하는 시차(Disparity)를 이용하여 물체까지의 거리(Depth)를 추정합니다. 특정 관심 영역(ROI)을 지정하여 각 물체(인형, 개구리 등)가 얼마나 떨어져 있는지 분석합니다.
+
+### 전체 코드
+```python
+import cv2
+import numpy as np
+from pathlib import Path
+
+# 출력 폴더 생성
+output_dir = Path("./outputs")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+# 좌/우 이미지 불러오기
+left_color = cv2.imread("../images/left.png")
+right_color = cv2.imread("../images/right.png")
+
+if left_color is None or right_color is None:
+    raise FileNotFoundError("좌/우 이미지를 찾지 못했습니다.")
+
+
+# 카메라 파라미터
+f = 700.0
+B = 0.12
+
+# ROI 설정
+rois = {
+    "Painting": (55, 50, 130, 110),
+    "Frog": (90, 265, 230, 95),
+    "Teddy": (310, 35, 115, 90)
+}
+
+# 그레이스케일 변환
+gray_left = cv2.cvtColor(left_color, cv2.COLOR_BGR2GRAY)
+gray_right = cv2.cvtColor(right_color, cv2.COLOR_BGR2GRAY)
+
+
+# -----------------------------
+# 1. Disparity 계산
+# -----------------------------
+stereo = cv2.StereoBM_create(numDisparities=64, blockSize=15)
+disparity = stereo.compute(gray_left, gray_right).astype(np.float32) / 16.0
+
+
+# -----------------------------
+# 2. Depth 계산
+# Z = fB / d
+# -----------------------------
+valid_mask = disparity > 0
+depth_map = np.zeros_like(disparity)
+depth_map[valid_mask] = (f * B) / disparity[valid_mask]
+
+
+# -----------------------------
+# 3. ROI별 평균 disparity / depth 계산
+# -----------------------------
+results = {}
+for name, (x, y, w, h) in rois.items():
+    roi_disp = disparity[y:y+h, x:x+w]
+    roi_depth = depth_map[y:y+h, x:x+w]
+    
+    # 0보다 큰 유효한 시차 값만 사용
+    valid_roi = roi_disp > 0
+    if np.any(valid_roi):
+        avg_disp = np.mean(roi_disp[valid_roi])
+        avg_depth = np.mean(roi_depth[valid_roi])
+        results[name] = (avg_disp, avg_depth)
+    else:
+        results[name] = (0.0, 0.0)
+
+# -----------------------------
+# 4. 결과 출력
+# -----------------------------
+print(f"{'ROI Name':<10} | {'Avg Disparity':<15} | {'Avg Depth (m)':<15}")
+print("-" * 45)
+for name, (avg_disp, avg_depth) in results.items():
+    print(f"{name:<10} | {avg_disp:<15.2f} | {avg_depth:<15.2f}")
+
+# 가장 가까운 ROI와 먼 ROI 판단
+if results:
+    closest_roi = min(results, key=lambda k: results[k][1] if results[k][1] > 0 else float('inf'))
+    farthest_roi = max(results, key=lambda k: results[k][1])
+    print(f"\nClosest ROI: {closest_roi}")
+    print(f"Farthest ROI: {farthest_roi}")
+
+
+# -----------------------------
+# 5. disparity 시각화
+# 가까울수록 빨강 / 멀수록 파랑
+# -----------------------------
+disp_tmp = disparity.copy()
+disp_tmp[disp_tmp <= 0] = np.nan
+
+if np.all(np.isnan(disp_tmp)):
+    raise ValueError("유효한 disparity 값이 없습니다.")
+
+d_min = np.nanpercentile(disp_tmp, 5)
+d_max = np.nanpercentile(disp_tmp, 95)
+
+if d_max <= d_min:
+    d_max = d_min + 1e-6
+
+disp_scaled = (disp_tmp - d_min) / (d_max - d_min)
+disp_scaled = np.clip(disp_scaled, 0, 1)
+
+disp_vis = np.zeros_like(disparity, dtype=np.uint8)
+valid_disp = ~np.isnan(disp_tmp)
+disp_vis[valid_disp] = (disp_scaled[valid_disp] * 255).astype(np.uint8)
+
+disparity_color = cv2.applyColorMap(disp_vis, cv2.COLORMAP_JET)
+
+# -----------------------------
+# 6. depth 시각화
+# 가까울수록 빨강 / 멀수록 파랑
+# -----------------------------
+depth_vis = np.zeros_like(depth_map, dtype=np.uint8)
+
+if np.any(valid_mask):
+    depth_valid = depth_map[valid_mask]
+
+    z_min = np.percentile(depth_valid, 5)
+    z_max = np.percentile(depth_valid, 95)
+
+    if z_max <= z_min:
+        z_max = z_min + 1e-6
+
+    depth_scaled = (depth_map - z_min) / (z_max - z_min)
+    depth_scaled = np.clip(depth_scaled, 0, 1)
+
+    # depth는 클수록 멀기 때문에 반전
+    depth_scaled = 1.0 - depth_scaled
+    depth_vis[valid_mask] = (depth_scaled[valid_mask] * 255).astype(np.uint8)
+
+depth_color = cv2.applyColorMap(depth_vis, cv2.COLORMAP_JET)
+
+# -----------------------------
+# 7. Left / Right 이미지에 ROI 표시
+# -----------------------------
+left_vis = left_color.copy()
+right_vis = right_color.copy()
+
+for name, (x, y, w, h) in rois.items():
+    cv2.rectangle(left_vis, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    cv2.putText(left_vis, name, (x, y - 8),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+    cv2.rectangle(right_vis, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    cv2.putText(right_vis, name, (x, y - 8),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+# -----------------------------
+# 8. 저장
+# -----------------------------
+cv2.imwrite("../outputs/03_disparity_color.jpg", disparity_color)
+cv2.imwrite("../outputs/03_depth_color.jpg", depth_color)
+cv2.imwrite("../outputs/03_left_rois.jpg", left_vis)
+
+# 9. 출력
+# -----------------------------
+cv2.imshow("Disparity Map", disparity_color)
+cv2.imshow("Depth Map", depth_color)
+cv2.imshow("Left ROI", left_vis)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+```
+
+### 핵심 코드 및 설명
+- **`cv2.StereoBM`**: 블록 매칭 알고리즘을 사용하여 좌우 이미지 사이의 픽셀 차이(시차)를 계산합니다. 결과값은 16배 정수형이므로 16으로 나누어야 정확한 시차 값이 나옵니다.
+- **`Depth = (f * B) / d`**: 초점 거리($f$)와 카메라 간격($B$)이 클수록, 시차($d$)가 작을수록 깊이 값은 커집니다. (시차가 작으면 먼 물체)
+- **`cv2.applyColorMap`**: 계산된 시차나 거리를 사람이 보기 편하도록 색상 정보(빨강-가까움, 파랑-멈)로 변환합니다.
+
+### 결과 화면
+<table align="center">
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/48ca14c0-fb04-46d2-b8bb-ac6baba99e46" width="100%"></td>
+    <td><img src="https://github.com/user-attachments/assets/90b78177-9d51-49f6-8c59-d6fb649fa465" width="100%"></td>
+    <td><img src="https://github.com/user-attachments/assets/8c086191-5e88-4252-84d6-dad1d8831401" width="100%"></td>
+  </tr>
+    <tr>
+    <td align="center"><b>Left ROI</b></td>
+    <td align="center"><b>Disparity map</b></td>
+    <td align="center"><b>Depth Map</b></td>
+  </tr>
+</table>
+

@@ -105,6 +105,15 @@ print(f"Result saved to {output_path}")
 ### 결과 화면
 ![01_calibration_result](https://github.com/user-attachments/assets/bd27434a-aaee-4319-9cc2-3e22bc17b6da)
 
+### Camera Matrix K
+$$
+K = \begin{bmatrix} 
+536.07345314 & 0. & 342.37046827 \\ 
+0. & 536.01636274 & 235.53687064 \\ 
+0. & 0. & 1. 
+\end{bmatrix}
+$$
+
 ---
 
 ## 2. 이미지 Rotation & Transformation (`02.Transformation.py`)
@@ -361,3 +370,11 @@ cv2.destroyAllWindows()
   </tr>
 </table>
 
+| ROI Name | Avg Disparity | Avg Depth (m) |
+| :--- | :---: | :---: |
+| **Painting** | 19.06 | 4.42 |
+| **Frog** | 33.60 | 2.51 |
+| **Teddy** | 22.42 | 3.89 |
+
+* **Closest ROI:** `Frog` (2.51m)
+* **Farthest ROI:** `Painting` (4.42m)
